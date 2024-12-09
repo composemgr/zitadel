@@ -1,0 +1,54 @@
+name: zitadel
+services:
+  server:
+    image: 'ghcr.io/zitadel/zitadel:latest'
+    container_name: zitadel-server
+    hostname: zitadel
+    restart: 'always'
+    user: root
+    command: 'start-from-init --masterkey "8COBhAzKUtuP1LD6fIZemOQYBqBROyqa" --tlsMode external'
+    environment:
+      - ZITADEL_EXTERNALSECURE=false
+      - ZITADEL_EXTERNALDOMAIN=zitadel.casjay.org
+      - ZITADEL_DATABASE_POSTGRES_PORT=5432
+      - ZITADEL_DATABASE_POSTGRES_HOST=zitadel-db
+      - ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel
+      - ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel
+      - ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=${DB_ADMIN_PASS:-zoUPFjvAnXGCqtZ79eNA3kEWcCzNAaN7}
+      - ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=postgres
+      - ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=${DB_ADMIN_PASS:-zoUPFjvAnXGCqtZ79eNA3kEWcCzNAaN7}
+      - ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable
+      - ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable
+    ports:
+      - '172.17.0.1:59048:8080'
+    volumes:
+      - '/var/lib/srv/$USER/docker/zitadel/zitadel/latest/rootfs/config/zitadel/machinekey:/machinekey'
+    depends_on:
+      db:
+        condition: 'service_healthy'
+    networks:
+      - 'zitadel'
+
+  db:
+    image: postgres:16-alpine
+    container_name: zitadel-db
+    hostname: zitadel-db
+    restart: 'always'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_ADMIN_PASS:-zoUPFjvAnXGCqtZ79eNA3kEWcCzNAaN7}
+    volumes:
+      - '/var/lib/srv/$USER/docker/zitadel/zitadel/latest/rootfs/data/db/postgres:/var/lib/postgresql/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready', '-d', 'zitadel', '-U', 'postgres']
+      interval: '10s'
+      timeout: '30s'
+      retries: 5
+      start_period: '20s'
+    networks:
+      - 'zitadel'
+
+networks:
+  zitadel:
+    name: zitadel
+    external: false
