@@ -57,7 +57,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: zoUPFjvAnXGCqtZ79eNA3kEWcCzNAaN7
     volumes:
-      - './rootfs/db/postgres:/var/lib/postgresql/data'
+      - './rootfs/data/db/postgres:/var/lib/postgresql/data'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready', '-d', 'zitadel', '-U', 'postgres']
       interval: '10s'
