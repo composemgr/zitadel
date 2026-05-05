@@ -52,8 +52,8 @@ See `docker-compose.yaml` for complete list of configurable options.
 
 ## 📂 Volumes
 
-- `./rootfs/config/zitadel/machinekey` - Data storage
-- `./rootfs/data/db/postgres` - Data storage
+- `./volumes/config/zitadel/machinekey` - Data storage
+- `./volumes/data/db/postgres` - Data storage
 
 ## 🔐 Security
 
