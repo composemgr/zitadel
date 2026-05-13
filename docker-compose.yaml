@@ -20,6 +20,8 @@ services:
     logging: *default-logging
     environment:
       TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: zitadel-server
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
       ZITADEL_EXTERNALPORT: 443
       ZITADEL_EXTERNALSECURE: true
       ZITADEL_EXTERNALDOMAIN: ${BASE_HOST_NAME:-$HOSTNAME}
@@ -43,6 +45,24 @@ services:
         condition: 'service_healthy'
     networks:
       - 'zitadel'
+      - proxy
+      - cloudflare
+    labels:
+      - 'traefik.enable=true'
+      - 'cloudflare.enable=true'
+      - 'traefik.docker.network=proxy'
+      - 'cloudflare.service=http://zitadel-server:8080'
+      - 'cloudflare.hostname=zitadel.${CLOUDFLARE_ZONE_NAME:-}'
+      - 'traefik.http.routers.zitadel-server.entrypoints=http'
+      - 'traefik.http.routers.zitadel-server-secure.tls=true'
+      - 'traefik.http.routers.zitadel-server.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
+      - 'traefik.http.middlewares.zitadel-server-https-redirect.redirectscheme.scheme=https'
+      - 'traefik.http.routers.zitadel-server.middlewares=zitadel-server-https-redirect'
+      - 'traefik.http.routers.zitadel-server-secure.entrypoints=https'
+      - 'traefik.http.routers.zitadel-server-secure.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
+      - 'traefik.http.routers.zitadel-server-secure.tls.certresolver=cloudflare'
+      - 'traefik.http.routers.zitadel-server-secure.service=zitadel-server'
+      - 'traefik.http.services.zitadel-server.loadbalancer.server.port=8080'
 
   zitadel-db:
     image: postgres:latest
@@ -53,6 +73,7 @@ services:
     logging: *default-logging
     environment:
       TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: zitadel-db
       POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-zitadel}
       PGUSER: postgres
       POSTGRES_USER: postgres
@@ -72,3 +93,7 @@ networks:
   zitadel:
     name: zitadel
     external: false
+  proxy:
+    external: true
+  cloudflare:
+    external: true
