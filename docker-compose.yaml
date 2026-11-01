@@ -1,4 +1,4 @@
-# nginx proxy address - http://172.17.0.1:59048
+# nginx proxy address - http://172.17.0.1:64398
 
 name: zitadel
 x-logging: &default-logging
@@ -8,65 +8,57 @@ x-logging: &default-logging
   driver: json-file
 
 services:
-  server:
+  app:
     image: ghcr.io/zitadel/zitadel:latest
-    container_name: zitadel-server
+    container_name: zitadel-app
     domainname: ${BASE_DOMAIN_NAME:-example.com}
     hostname: ${BASE_HOST_NAME:-$HOSTNAME}
     restart: always
     pull_policy: always
-    user: root
-    command: 'start-from-init --masterkey "${APP_SECRET_KEY:-changeme_secret_key_min_32_chars}" --tlsMode external'
     logging: *default-logging
+    command:
+      - 'start-from-init'
+      - '--masterkey'
+      - '${APP_SECRET_KEY:-replace-with-a-random-32-byte-hex-string}'
+      - '--tlsMode'
+      - 'external'
     environment:
       TZ: ${TZ:-America/New_York}
-      CONTAINER_NAME: zitadel-server
+      CONTAINER_NAME: zitadel-app
       HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
-      ZITADEL_EXTERNALPORT: 443
-      ZITADEL_EXTERNALSECURE: true
       ZITADEL_EXTERNALDOMAIN: ${BASE_HOST_NAME:-$HOSTNAME}
-      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNAL_PORT:-443}
+      ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNAL_SECURE:-true}
       ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
       ZITADEL_DATABASE_POSTGRES_DATABASE: ${DB_CREATE_DATABASE_NAME:-zitadel}
       ZITADEL_DATABASE_POSTGRES_USER_USERNAME: ${DB_USER_NAME:-zitadel}
-      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${DB_USER_PASS:-changeme_db_password}
-      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
-      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${DB_ADMIN_PASS:-changeme_admin_password}
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${DB_USER_PASS:-replace-with-a-random-password}
       ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: ${DB_ADMIN_NAME:-postgres}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${DB_ADMIN_PASS:-replace-with-a-random-password}
       ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${APP_ADMIN_USER:-administrator}
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${APP_ADMIN_PASS:-changeme_admin_password}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${APP_ADMIN_PASS:-replace-with-a-random-password}
     ports:
-      - '172.17.0.1:59048:8080'
+      - '172.17.0.1:64398:8080'
     volumes:
-      - './volumes/config/zitadel/machinekey:/machinekey'
+      - './volumes/config/zitadel/machinekey:/machinekey:z'
     depends_on:
       zitadel-db:
-        condition: 'service_healthy'
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/healthz']
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
-      - 'zitadel'
-      - proxy
-      - cloudflare
-    labels:
-      - 'traefik.enable=true'
-      - 'cloudflare.enable=true'
-      - 'traefik.docker.network=proxy'
-      - 'cloudflare.service=http://zitadel-server:8080'
-      - 'cloudflare.hostname=zitadel.${CLOUDFLARE_ZONE_NAME:-}'
-      - 'traefik.http.routers.zitadel-server.entrypoints=http'
-      - 'traefik.http.routers.zitadel-server-secure.tls=true'
-      - 'traefik.http.routers.zitadel-server.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
-      - 'traefik.http.middlewares.zitadel-server-https-redirect.redirectscheme.scheme=https'
-      - 'traefik.http.routers.zitadel-server.middlewares=zitadel-server-https-redirect'
-      - 'traefik.http.routers.zitadel-server-secure.entrypoints=https'
-      - 'traefik.http.routers.zitadel-server-secure.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
-      - 'traefik.http.routers.zitadel-server-secure.tls.certresolver=cloudflare'
-      - 'traefik.http.routers.zitadel-server-secure.service=zitadel-server'
-      - 'traefik.http.services.zitadel-server.loadbalancer.server.port=8080'
+      - zitadel
 
   zitadel-db:
     image: postgres:latest
     container_name: zitadel-db
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
     hostname: zitadel-db
     restart: always
     pull_policy: always
@@ -75,25 +67,20 @@ services:
       TZ: ${TZ:-America/New_York}
       CONTAINER_NAME: zitadel-db
       POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-zitadel}
-      PGUSER: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_ADMIN_PASS:-changeme_admin_password}
+      POSTGRES_USER: ${DB_ADMIN_NAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASS:-replace-with-a-random-password}
     volumes:
-      - './volumes/data/db/postgres:/var/lib/postgresql/data'
+      - './volumes/db/postgres/zitadel:/var/lib/postgresql/data:z'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -d zitadel -U postgres']
-      interval: '10s'
-      timeout: '30s'
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 30s
       retries: 5
-      start_period: '20s'
+      start_period: 20s
     networks:
-      - 'zitadel'
+      - zitadel
 
 networks:
   zitadel:
     name: zitadel
     external: false
-  proxy:
-    external: true
-  cloudflare:
-    external: true

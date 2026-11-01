@@ -1,0 +1,89 @@
+name: zitadel
+x-logging: &default-logging
+  options:
+    max-size: '5m'
+    max-file: '1'
+  driver: json-file
+
+services:
+  app:
+    image: ghcr.io/zitadel/zitadel:latest
+    container_name: zitadel-app
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: ${BASE_HOST_NAME:-$HOSTNAME}
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    command:
+      - 'start-from-init'
+      - '--masterkey'
+      - '${APP_SECRET_KEY:-replace-with-a-random-32-byte-hex-string}'
+      - '--tlsMode'
+      - 'external'
+    environment:
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: zitadel-app
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
+      ZITADEL_EXTERNALDOMAIN: ${BASE_HOST_NAME:-$HOSTNAME}
+      ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNAL_PORT:-443}
+      ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNAL_SECURE:-true}
+      ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: ${DB_CREATE_DATABASE_NAME:-zitadel}
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: ${DB_USER_NAME:-zitadel}
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${DB_USER_PASS:-replace-with-a-random-password}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: ${DB_ADMIN_NAME:-postgres}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${DB_ADMIN_PASS:-replace-with-a-random-password}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${APP_ADMIN_USER:-administrator}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${APP_ADMIN_PASS:-replace-with-a-random-password}
+    volumes:
+      - './volumes/config/zitadel/machinekey:/machinekey:z'
+    depends_on:
+      zitadel-db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/healthz']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - 'cloudflare.enable=true'
+      - 'cloudflare.service=http://zitadel-app:8080'
+      - 'cloudflare.hostname=${BASE_HOST_NAME:-$HOSTNAME}'
+    networks:
+      - zitadel
+      - cloudflare
+
+  zitadel-db:
+    image: postgres:latest
+    container_name: zitadel-db
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: zitadel-db
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: zitadel-db
+      POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-zitadel}
+      POSTGRES_USER: ${DB_ADMIN_NAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASS:-replace-with-a-random-password}
+    volumes:
+      - './volumes/db/postgres/zitadel:/var/lib/postgresql/data:z'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 20s
+    networks:
+      - zitadel
+
+networks:
+  zitadel:
+    name: zitadel
+    external: false
+  cloudflare:
+    external: true

@@ -4,16 +4,18 @@ Identity infrastructure with authentication and authorization
 
 ## 📋 Description
 
-Identity infrastructure with authentication and authorization
+Zitadel is an identity provider that issues OIDC, OAuth2, and SAML tokens and
+serves a login UI on the same origin. This stack runs a single Zitadel
+container with `start-from-init`, backed by PostgreSQL, behind the host nginx
+proxy. The machine key is persisted so encrypted secrets survive a rebuild.
 
 ## 🚀 Services
 
-- **server**: ghcr.io/zitadel/zitadel:latest
+- **app**: ghcr.io/zitadel/zitadel:latest
 
 ### Infrastructure Components
 
-- **db**: Postgres database
-
+- **zitadel-db**: Postgres database
 
 ## 📦 Installation
 
@@ -26,7 +28,8 @@ curl -q -LSsf "https://raw.githubusercontent.com/composemgr/zitadel/main/docker-
 ```bash
 git clone "https://github.com/composemgr/zitadel" ~/.local/srv/docker/zitadel
 cd ~/.local/srv/docker/zitadel
-docker compose up -d
+cp default.env .env
+docker compose --env-file .env up -d
 ```
 
 ### Option 3: Using composemgr
@@ -40,52 +43,115 @@ composemgr install zitadel
 
 ```shell
 TZ=America/New_York
+DB_CREATE_DATABASE_NAME=zitadel
+DB_USER_NAME=zitadel
+DB_USER_PASS=replace-with-a-random-password
+DB_ADMIN_NAME=postgres
+DB_ADMIN_PASS=replace-with-a-random-password
+APP_SECRET_KEY=replace-with-a-random-32-byte-hex-string
 APP_ADMIN_USER=administrator
-APP_TEMP_PASS=lkdfjdlkjaflkjadlgknvczmbnvnoi4e
+APP_ADMIN_PASS=replace-with-a-random-password
+ZITADEL_EXTERNAL_PORT=443
+ZITADEL_EXTERNAL_SECURE=true
 ```
 
 See `docker-compose.yaml` for complete list of configurable options.
 
+### Environment Files
+
+`default.env.sample` holds the full set of variables and is copied to `.env`
+before starting the stack:
+
+```bash
+cp default.env .env
+docker compose --env-file .env up -d
+```
+
+`app.env.sample` holds the app-specific overrides and is copied to `app.env`:
+
+```bash
+cp app.env.sample app.env
+```
+
+`composemgr up` applies `app.env` and `default.env` automatically. Raw
+`docker compose` commands need `--env-file .env` to pick up the same values.
+
+### Reverse Proxy
+
+Three standalone compose files ship in this repo:
+
+| File | Use |
+|------|-----|
+| `docker-compose.yaml` | Default, published on `172.17.0.1:64398` |
+| `docker-compose.traefik.yaml` | Behind an existing external `traefik` network |
+| `docker-compose.tunnel.yaml` | Behind an existing external `cloudflare` tunnel network |
+
+```bash
+docker compose -f docker-compose.traefik.yaml --env-file .env up -d
+```
+
+Only the `app` service carries the proxy labels and joins the external
+network. The database stays on the internal project network. Zitadel runs
+with `--tlsMode external`, so it expects the proxy to terminate TLS, keep
+`ZITADEL_EXTERNAL_SECURE` set to `true` and `ZITADEL_EXTERNAL_PORT` at `443`
+for any hostname that resolves publicly.
+
 ## 🌐 Access
 
-- **Web Interface**: http://172.17.0.1:59048
+- **Web Interface**: http://172.17.0.1:64398
+- **OIDC Discovery**: http://172.17.0.1:64398/.well-known/openid-configuration
+
+`ZITADEL_EXTERNALDOMAIN` drives every issuer URL Zitadel hands to clients. If
+you reach the stack by IP on the published port, the discovery document will
+still advertise `BASE_HOST_NAME`, so use a resolvable hostname for anything
+beyond a quick look.
 
 ## 📂 Volumes
 
-- `./volumes/config/zitadel/machinekey` - Data storage
-- `./volumes/data/db/postgres` - Data storage
+- `./volumes/config/zitadel/machinekey` - Machine key, required to decrypt
+  stored secrets
+- `./volumes/db/postgres/zitadel` - Database data
 
 ## 🔐 Security
 
-- Change all default passwords before deploying to production
-- Use strong secrets for all authentication tokens
-- Configure HTTPS using a reverse proxy (nginx, traefik, caddy)
+- `APP_SECRET_KEY` is the master key and must be exactly 32 characters, it
+  encrypts every secret Zitadel stores
+- Changing the master key after the first start makes all existing encrypted
+  values unreadable
+- Never lose `./volumes/config/zitadel/machinekey`, without it a restore
+  cannot decrypt the database
+- Change `APP_ADMIN_PASS` before the first start, `start-from-init` only
+  creates that account when the instance is empty
+- Set `ZITADEL_EXTERNAL_SECURE` to `false` if you deliberately serve the
+  login over plain HTTP, tokens would otherwise be sent in clear
+- Use HTTPS via the reverse proxy in production
+- The database is reachable only on the internal project network
 - Regularly update Docker images for security patches
-- Backup your data regularly
+- Backup both volumes regularly
 
 ## 🔍 Logging
 
 ```shell
-docker compose logs -f server
+docker compose --env-file .env logs -f app
 ```
 
 ## 🛠️ Management
 
 ```bash
 # Start services
-docker compose up -d
+docker compose --env-file .env up -d
 
 # Stop services
-docker compose down
+docker compose --env-file .env down
 
 # Update to latest images
-docker compose pull && docker compose up -d
+docker compose --env-file .env pull && docker compose --env-file .env up -d
 
 # View logs
-docker compose logs -f
+docker compose --env-file .env logs -f
 
 # Restart services
-docker compose restart
+docker compose --env-file .env restart
 ```
 
 ## 📋 Requirements
